@@ -78,6 +78,14 @@
       <version>${mysql.connector.version}</version>
     </dependency>
 
+    <!-- PostgreSQL JDBC Connector -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.4</version>
+      <scope>runtime</scope>
+    </dependency>
+
     <!-- JavaMail API (javax.mail legacy — NO migrado a jakarta.mail, intencional) -->
     <dependency>
       <groupId>com.sun.mail</groupId>

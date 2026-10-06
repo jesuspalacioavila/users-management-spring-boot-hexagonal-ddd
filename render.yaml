@@ -7,10 +7,12 @@ services:
     autoDeployTrigger: commit
     healthCheckPath: /v3/api-docs
     envVars:
+      - key: DB_ENGINE
+        value: postgresql
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        value: "3306"
+        value: "12830"
       - key: DB_NAME
         value: crud_usuarios
       - key: DB_USERNAME
@@ -18,7 +20,7 @@ services:
       - key: DB_PASSWORD
         sync: false
       - key: DB_SSL_MODE
-        value: REQUIRED
+        value: require
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
