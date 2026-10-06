@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.jcaa.usersmanagement.infrastructure.adapter.persistence.config.PostgresDatabaseConfig;
 
 @Slf4j
 @Configuration(proxyBeanMethods = false)
@@ -41,9 +43,28 @@ public class DataSourceSpringConfig {
   private String dbSslMode;
 
   @Bean
+  @ConditionalOnProperty(name = "db.engine", havingValue = "mysql", matchIfMissing = true)
   public DataSource dataSource() {
     final DatabaseConfig config =
         new DatabaseConfig(dbHost, dbPort, dbName, dbUsername, dbPassword, dbSslMode);
+
+    final HikariConfig hikariConfig = new HikariConfig();
+    hikariConfig.setJdbcUrl(config.buildJdbcUrl());
+    hikariConfig.setUsername(config.username());
+    hikariConfig.setPassword(config.password());
+    hikariConfig.setMaximumPoolSize(10);
+    hikariConfig.setMinimumIdle(2);
+    hikariConfig.setConnectionTimeout(30_000);
+
+    log.info(LOG_DATASOURCE_INIT, dbHost, dbPort);
+    return new HikariDataSource(hikariConfig);
+  }
+
+  @Bean
+  @ConditionalOnProperty(name = "db.engine", havingValue = "postgresql")
+  public DataSource postgresDataSource() {
+    final PostgresDatabaseConfig config =
+        new PostgresDatabaseConfig(dbHost, dbPort, dbName, dbUsername, dbPassword, dbSslMode);
 
     final HikariConfig hikariConfig = new HikariConfig();
     hikariConfig.setJdbcUrl(config.buildJdbcUrl());
