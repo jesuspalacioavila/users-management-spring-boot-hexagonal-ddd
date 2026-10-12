@@ -55,7 +55,7 @@ public class CreateUserService implements CreateUserUseCase {
   /** PENDING -> ACTIVE solo si cuentas confirma la cuenta; si no, el usuario queda PENDING. */
   private UserModel activateIfAccountWasCreated(final UserModel savedUser) {
     try {
-      createAccountPort.createFor(savedUser.getId());
+      createAccountPort.createFor(savedUser);
       return updateUserPort.update(savedUser.activate());
     } catch (final AccountCreationFailedException exception) {
       log.warn(
