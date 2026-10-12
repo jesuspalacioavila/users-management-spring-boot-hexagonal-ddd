@@ -6,11 +6,13 @@ import static org.mockito.Mockito.*;
 
 import com.jcaa.usersmanagement.application.port.out.CreateAccountPort;
 import com.jcaa.usersmanagement.application.port.out.GetUserByEmailPort;
+import com.jcaa.usersmanagement.application.port.out.PublishDomainEventPort;
 import com.jcaa.usersmanagement.application.port.out.SaveUserPort;
 import com.jcaa.usersmanagement.application.port.out.UpdateUserPort;
 import com.jcaa.usersmanagement.application.service.dto.command.CreateUserCommand;
 import com.jcaa.usersmanagement.domain.enums.UserRole;
 import com.jcaa.usersmanagement.domain.enums.UserStatus;
+import com.jcaa.usersmanagement.domain.event.UserCreatedDomainEvent;
 import com.jcaa.usersmanagement.domain.exception.AccountCreationFailedException;
 import com.jcaa.usersmanagement.domain.exception.UserAlreadyExistsException;
 import com.jcaa.usersmanagement.domain.model.UserModel;
@@ -29,12 +31,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/**
- * Tests para CreateUserService.
- *
- * <p>Cubre: validación del command, email duplicado, flujo feliz (save + cuenta + ACTIVE +
- * notificación) y fallo de cuentas (el usuario queda PENDING).
- */
 @DisplayName("CreateUserService")
 @ExtendWith(MockitoExtension.class)
 class CreateUserServiceTest {
@@ -43,6 +39,7 @@ class CreateUserServiceTest {
   @Mock private GetUserByEmailPort getUserByEmailPort;
   @Mock private CreateAccountPort createAccountPort;
   @Mock private UpdateUserPort updateUserPort;
+  @Mock private PublishDomainEventPort publishDomainEventPort;
   @Mock private EmailNotificationService emailNotificationService;
 
   private CreateUserService service;
@@ -56,6 +53,7 @@ class CreateUserServiceTest {
               getUserByEmailPort,
               createAccountPort,
               updateUserPort,
+              publishDomainEventPort,
               emailNotificationService,
               validatorFactory.getValidator());
     }
@@ -64,8 +62,8 @@ class CreateUserServiceTest {
   // ── flujo feliz
 
   @Test
-  @DisplayName("execute() guarda, crea la cuenta, activa al usuario y notifica")
-  void shouldSaveCreateAccountActivateAndNotifyWhenEmailIsNew() {
+  @DisplayName("execute() guarda, crea la cuenta, activa, publica el evento y notifica")
+  void shouldSaveCreateAccountActivatePublishAndNotifyWhenEmailIsNew() {
     // Arrange
     final CreateUserCommand command =
         new CreateUserCommand("u-01", "John Arrieta", "john@example.com", "Pass1234", "ADMIN");
@@ -97,6 +95,7 @@ class CreateUserServiceTest {
     verify(saveUserPort).save(any(UserModel.class));
     verify(createAccountPort).createFor(new UserId("u-01"));
     verify(updateUserPort).update(activatedUser);
+    verify(publishDomainEventPort).publish(any(UserCreatedDomainEvent.class));
     verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass1234");
   }
 
@@ -130,7 +129,42 @@ class CreateUserServiceTest {
     // Assert
     assertEquals(UserStatus.PENDING, result.getStatus(), "sigue PENDING");
     verify(updateUserPort, never()).update(any());
+    verify(publishDomainEventPort).publish(any(UserCreatedDomainEvent.class));
     verify(emailNotificationService).notifyUserCreated(savedUser, "Pass9999");
+  }
+
+  // ── el evento falla pero el usuario se crea igual
+
+  @Test
+  @DisplayName("execute() no falla cuando la publicación del evento lanza una excepción")
+  void shouldNotFailWhenEventPublishingThrows() {
+    // Arrange
+    final CreateUserCommand command =
+        new CreateUserCommand("u-04", "Luis Gomez", "luis@example.com", "Pass7777", "MEMBER");
+
+    final UserModel savedUser =
+        new UserModel(
+            new UserId("u-04"),
+            new UserName("Luis Gomez"),
+            new UserEmail("luis@example.com"),
+            UserPassword.fromPlainText("Pass7777"),
+            UserRole.MEMBER,
+            UserStatus.PENDING);
+    final UserModel activatedUser = savedUser.activate();
+
+    when(getUserByEmailPort.getByEmail(any())).thenReturn(Optional.empty());
+    when(saveUserPort.save(any())).thenReturn(savedUser);
+    when(updateUserPort.update(any())).thenReturn(activatedUser);
+    doThrow(new IllegalStateException("kafka caído"))
+        .when(publishDomainEventPort)
+        .publish(any());
+
+    // Act
+    final UserModel result = service.execute(command);
+
+    // Assert
+    assertEquals(UserStatus.ACTIVE, result.getStatus());
+    verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass7777");
   }
 
   // ── email duplicado
@@ -157,6 +191,7 @@ class CreateUserServiceTest {
     assertThrows(UserAlreadyExistsException.class, () -> service.execute(command));
     verify(saveUserPort, never()).save(any());
     verify(createAccountPort, never()).createFor(any());
+    verify(publishDomainEventPort, never()).publish(any());
     verify(emailNotificationService, never()).notifyUserCreated(any(), any());
   }
 
@@ -177,6 +212,7 @@ class CreateUserServiceTest {
         getUserByEmailPort,
         createAccountPort,
         updateUserPort,
+        publishDomainEventPort,
         emailNotificationService);
   }
 }
