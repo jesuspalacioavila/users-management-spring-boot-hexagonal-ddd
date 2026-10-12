@@ -27,6 +27,7 @@ public class KafkaProducerConfig {
       @Value("${kafka.sasl.username}") final String username,
       @Value("${kafka.sasl.password}") final String password,
       @Value("${kafka.ssl.ca-path:}") final String caPath,
+      @Value("${kafka.topic.users}") final String topic,
       @Value("${kafka.ssl.ca-pem:}") final String caPem) {
 
     final Properties props = new Properties();
@@ -35,7 +36,7 @@ public class KafkaProducerConfig {
     props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
     props.put(ProducerConfig.ACKS_CONFIG, "all");
     // Si Kafka no responde, no dejar colgada la petición del usuario por mucho tiempo
-    props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5_000L);
+    props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 10_000L);
     props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 5_000);
     props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 15_000);
 
@@ -57,7 +58,9 @@ public class KafkaProducerConfig {
         bootstrapServers,
         securityProtocol,
         saslMechanism);
-    return new KafkaProducer<>(props);
+    final KafkaProducer<String, String> producer = new KafkaProducer<>(props);
+    warmUp(producer, topic);
+    return producer;
   }
 
   private static String jaasConfig(
@@ -72,5 +75,22 @@ public class KafkaProducerConfig {
 
   private static String escape(final String value) {
     return value.replace("\\", "\\\\").replace("\"", "\\\"");
+  }
+  /** Abre la conexión y pide los metadatos del tópico en segundo plano, para que el primer envío no tarde. */
+  private static void warmUp(final KafkaProducer<String, String> producer, final String topic) {
+    final Thread thread =
+        new Thread(
+            () -> {
+              try {
+                producer.partitionsFor(topic);
+                log.info("[KafkaProducerConfig] conexión calentada para el tópico {}", topic);
+              } catch (final RuntimeException exception) {
+                log.warn(
+                    "[KafkaProducerConfig] no se pudo calentar la conexión: {}", exception.toString());
+              }
+            },
+            "kafka-warmup");
+    thread.setDaemon(true);
+    thread.start();
   }
 }
