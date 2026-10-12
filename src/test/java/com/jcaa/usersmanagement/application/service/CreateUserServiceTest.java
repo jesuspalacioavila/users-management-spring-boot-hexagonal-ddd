@@ -4,11 +4,14 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.jcaa.usersmanagement.application.port.out.CreateAccountPort;
 import com.jcaa.usersmanagement.application.port.out.GetUserByEmailPort;
 import com.jcaa.usersmanagement.application.port.out.SaveUserPort;
+import com.jcaa.usersmanagement.application.port.out.UpdateUserPort;
 import com.jcaa.usersmanagement.application.service.dto.command.CreateUserCommand;
 import com.jcaa.usersmanagement.domain.enums.UserRole;
 import com.jcaa.usersmanagement.domain.enums.UserStatus;
+import com.jcaa.usersmanagement.domain.exception.AccountCreationFailedException;
 import com.jcaa.usersmanagement.domain.exception.UserAlreadyExistsException;
 import com.jcaa.usersmanagement.domain.model.UserModel;
 import com.jcaa.usersmanagement.domain.valueobject.UserEmail;
@@ -29,7 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 /**
  * Tests para CreateUserService.
  *
- * <p>Cubre: validación del command, email duplicado y flujo feliz (save + notificación).
+ * <p>Cubre: validación del command, email duplicado, flujo feliz (save + cuenta + ACTIVE +
+ * notificación) y fallo de cuentas (el usuario queda PENDING).
  */
 @DisplayName("CreateUserService")
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +41,8 @@ class CreateUserServiceTest {
 
   @Mock private SaveUserPort saveUserPort;
   @Mock private GetUserByEmailPort getUserByEmailPort;
+  @Mock private CreateAccountPort createAccountPort;
+  @Mock private UpdateUserPort updateUserPort;
   @Mock private EmailNotificationService emailNotificationService;
 
   private CreateUserService service;
@@ -48,6 +54,8 @@ class CreateUserServiceTest {
           new CreateUserService(
               saveUserPort,
               getUserByEmailPort,
+              createAccountPort,
+              updateUserPort,
               emailNotificationService,
               validatorFactory.getValidator());
     }
@@ -56,8 +64,8 @@ class CreateUserServiceTest {
   // ── flujo feliz
 
   @Test
-  @DisplayName("execute() guarda el usuario y envía notificación cuando el email no existe")
-  void shouldSaveUserAndNotifyWhenEmailIsNew() {
+  @DisplayName("execute() guarda, crea la cuenta, activa al usuario y notifica")
+  void shouldSaveCreateAccountActivateAndNotifyWhenEmailIsNew() {
     // Arrange
     final CreateUserCommand command =
         new CreateUserCommand("u-01", "John Arrieta", "john@example.com", "Pass1234", "ADMIN");
@@ -70,9 +78,11 @@ class CreateUserServiceTest {
             UserPassword.fromPlainText("Pass1234"),
             UserRole.ADMIN,
             UserStatus.PENDING);
+    final UserModel activatedUser = savedUser.activate();
 
     when(getUserByEmailPort.getByEmail(any())).thenReturn(Optional.empty());
     when(saveUserPort.save(any())).thenReturn(savedUser);
+    when(updateUserPort.update(any())).thenReturn(activatedUser);
 
     // Act
     final UserModel result = service.execute(command);
@@ -81,10 +91,46 @@ class CreateUserServiceTest {
     assertAll(
         "flujo feliz de CreateUserService",
         () -> assertNotNull(result, "resultado no debe ser null"),
-        () -> assertEquals("u-01", result.getId().value(), "id del usuario guardado"));
+        () -> assertEquals("u-01", result.getId().value(), "id del usuario guardado"),
+        () -> assertEquals(UserStatus.ACTIVE, result.getStatus(), "queda ACTIVE"));
 
     verify(saveUserPort).save(any(UserModel.class));
-    verify(emailNotificationService).notifyUserCreated(savedUser, "Pass1234");
+    verify(createAccountPort).createFor(new UserId("u-01"));
+    verify(updateUserPort).update(activatedUser);
+    verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass1234");
+  }
+
+  // ── cuentas no disponible
+
+  @Test
+  @DisplayName("execute() deja al usuario PENDING cuando no se puede crear la cuenta")
+  void shouldKeepUserPendingWhenAccountCreationFails() {
+    // Arrange
+    final CreateUserCommand command =
+        new CreateUserCommand("u-03", "Ana Perez", "ana@example.com", "Pass9999", "MEMBER");
+
+    final UserModel savedUser =
+        new UserModel(
+            new UserId("u-03"),
+            new UserName("Ana Perez"),
+            new UserEmail("ana@example.com"),
+            UserPassword.fromPlainText("Pass9999"),
+            UserRole.MEMBER,
+            UserStatus.PENDING);
+
+    when(getUserByEmailPort.getByEmail(any())).thenReturn(Optional.empty());
+    when(saveUserPort.save(any())).thenReturn(savedUser);
+    doThrow(AccountCreationFailedException.becauseCircuitIsOpen("u-03"))
+        .when(createAccountPort)
+        .createFor(any());
+
+    // Act
+    final UserModel result = service.execute(command);
+
+    // Assert
+    assertEquals(UserStatus.PENDING, result.getStatus(), "sigue PENDING");
+    verify(updateUserPort, never()).update(any());
+    verify(emailNotificationService).notifyUserCreated(savedUser, "Pass9999");
   }
 
   // ── email duplicado
@@ -110,6 +156,7 @@ class CreateUserServiceTest {
     // Act & Assert
     assertThrows(UserAlreadyExistsException.class, () -> service.execute(command));
     verify(saveUserPort, never()).save(any());
+    verify(createAccountPort, never()).createFor(any());
     verify(emailNotificationService, never()).notifyUserCreated(any(), any());
   }
 
@@ -125,6 +172,11 @@ class CreateUserServiceTest {
 
     // Act & Assert
     assertThrows(ConstraintViolationException.class, () -> service.execute(command));
-    verifyNoInteractions(saveUserPort, getUserByEmailPort, emailNotificationService);
+    verifyNoInteractions(
+        saveUserPort,
+        getUserByEmailPort,
+        createAccountPort,
+        updateUserPort,
+        emailNotificationService);
   }
 }

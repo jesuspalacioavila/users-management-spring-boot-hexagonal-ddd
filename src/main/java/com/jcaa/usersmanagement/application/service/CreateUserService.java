@@ -1,10 +1,13 @@
 package com.jcaa.usersmanagement.application.service;
 
 import com.jcaa.usersmanagement.application.port.in.CreateUserUseCase;
+import com.jcaa.usersmanagement.application.port.out.CreateAccountPort;
 import com.jcaa.usersmanagement.application.port.out.GetUserByEmailPort;
 import com.jcaa.usersmanagement.application.port.out.SaveUserPort;
+import com.jcaa.usersmanagement.application.port.out.UpdateUserPort;
 import com.jcaa.usersmanagement.application.service.dto.command.CreateUserCommand;
 import com.jcaa.usersmanagement.application.service.mapper.UserApplicationMapper;
+import com.jcaa.usersmanagement.domain.exception.AccountCreationFailedException;
 import com.jcaa.usersmanagement.domain.exception.UserAlreadyExistsException;
 import com.jcaa.usersmanagement.domain.model.UserModel;
 import com.jcaa.usersmanagement.domain.valueobject.UserEmail;
@@ -24,6 +27,8 @@ public class CreateUserService implements CreateUserUseCase {
 
   private final SaveUserPort saveUserPort;
   private final GetUserByEmailPort getUserByEmailPort;
+  private final CreateAccountPort createAccountPort;
+  private final UpdateUserPort updateUserPort;
   private final EmailNotificationService emailNotificationService;
   private final Validator validator;
 
@@ -37,9 +42,25 @@ public class CreateUserService implements CreateUserUseCase {
     final UserModel userToSave = UserApplicationMapper.fromCreateCommandToModel(command);
     final UserModel savedUser = saveUserPort.save(userToSave);
 
-    emailNotificationService.notifyUserCreated(savedUser, command.password());
+    final UserModel resultUser = activateIfAccountWasCreated(savedUser);
 
-    return savedUser;
+    emailNotificationService.notifyUserCreated(resultUser, command.password());
+
+    return resultUser;
+  }
+
+  /** PENDING -> ACTIVE solo si cuentas confirma la cuenta; si no, el usuario queda PENDING. */
+  private UserModel activateIfAccountWasCreated(final UserModel savedUser) {
+    try {
+      createAccountPort.createFor(savedUser.getId());
+      return updateUserPort.update(savedUser.activate());
+    } catch (final AccountCreationFailedException exception) {
+      log.warn(
+          "[CreateUserService] usuario {} queda PENDING. Causa: {}",
+          savedUser.getId().value(),
+          exception.getMessage());
+      return savedUser;
+    }
   }
 
   private void validateCommand(final CreateUserCommand command) {
