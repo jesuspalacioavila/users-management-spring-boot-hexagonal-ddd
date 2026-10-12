@@ -1,7 +1,7 @@
 package com.jcaa.usersmanagement.application.port.out;
 
-import com.jcaa.usersmanagement.domain.valueobject.UserId;
+import com.jcaa.usersmanagement.domain.model.UserModel;
 
 public interface CreateAccountPort {
-  void createFor(UserId userId);
+  void createFor(UserModel user);
 }

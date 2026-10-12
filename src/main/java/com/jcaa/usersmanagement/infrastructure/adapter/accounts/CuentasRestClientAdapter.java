@@ -2,7 +2,7 @@ package com.jcaa.usersmanagement.infrastructure.adapter.accounts;
 
 import com.jcaa.usersmanagement.application.port.out.CreateAccountPort;
 import com.jcaa.usersmanagement.domain.exception.AccountCreationFailedException;
-import com.jcaa.usersmanagement.domain.valueobject.UserId;
+import com.jcaa.usersmanagement.domain.model.UserModel;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
@@ -28,8 +28,15 @@ public class CuentasRestClientAdapter implements CreateAccountPort {
   private final Retry cuentasRetry;
 
   @Override
-  public void createFor(final UserId userId) {
-    final Supplier<Void> call = () -> postAccount(userId.value());
+  public void createFor(final UserModel user) {
+    final String userId = user.getId().value();
+    final Map<String, String> body =
+        Map.of(
+            "userId", userId,
+            "name", user.getName().value(),
+            "email", user.getEmail().value());
+
+    final Supplier<Void> call = () -> postAccount(userId, body);
     final Supplier<Void> withCircuitBreaker =
         CircuitBreaker.decorateSupplier(cuentasCircuitBreaker, call);
     final Supplier<Void> withRetry = Retry.decorateSupplier(cuentasRetry, withCircuitBreaker);
@@ -37,19 +44,19 @@ public class CuentasRestClientAdapter implements CreateAccountPort {
     try {
       withRetry.get();
     } catch (final CallNotPermittedException exception) {
-      throw AccountCreationFailedException.becauseCircuitIsOpen(userId.value());
+      throw AccountCreationFailedException.becauseCircuitIsOpen(userId);
     } catch (final RestClientException exception) {
-      throw AccountCreationFailedException.becauseServiceFailed(userId.value(), exception);
+      throw AccountCreationFailedException.becauseServiceFailed(userId, exception);
     }
   }
 
-  private Void postAccount(final String userId) {
+  private Void postAccount(final String userId, final Map<String, String> body) {
     try {
       cuentasRestClient
           .post()
           .uri(ACCOUNTS_URI)
           .contentType(MediaType.APPLICATION_JSON)
-          .body(Map.of("userId", userId))
+          .body(body)
           .retrieve()
           .toBodilessEntity();
       log.info("[CuentasRestClientAdapter] cuenta creada para userId={}", userId);

@@ -93,7 +93,7 @@ class CreateUserServiceTest {
         () -> assertEquals(UserStatus.ACTIVE, result.getStatus(), "queda ACTIVE"));
 
     verify(saveUserPort).save(any(UserModel.class));
-    verify(createAccountPort).createFor(new UserId("u-01"));
+    verify(createAccountPort).createFor(savedUser);
     verify(updateUserPort).update(activatedUser);
     verify(publishDomainEventPort).publish(any(UserCreatedDomainEvent.class));
     verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass1234");
