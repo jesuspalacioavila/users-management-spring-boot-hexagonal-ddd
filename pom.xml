@@ -137,6 +137,11 @@
       <version>${resilience4j.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
+
     <!-- Swagger annotations — declarada explícitamente para que el IDE las indexe
          (springdoc-openapi la incluye transitivamente, pero algunos IDEs
           necesitan verla directa en el pom para resolver los símbolos) -->
