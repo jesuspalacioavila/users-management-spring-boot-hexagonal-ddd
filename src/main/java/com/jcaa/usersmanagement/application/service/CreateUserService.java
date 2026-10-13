@@ -31,7 +31,6 @@ public class CreateUserService implements CreateUserUseCase {
   private final CreateAccountPort createAccountPort;
   private final UpdateUserPort updateUserPort;
   private final PublishDomainEventPort publishDomainEventPort;
-  private final EmailNotificationService emailNotificationService;
   private final Validator validator;
 
   @Override
@@ -47,7 +46,6 @@ public class CreateUserService implements CreateUserUseCase {
     final UserModel resultUser = activateIfAccountWasCreated(savedUser);
 
     publishUserCreated(resultUser);
-    emailNotificationService.notifyUserCreated(resultUser, command.password());
 
     return resultUser;
   }
