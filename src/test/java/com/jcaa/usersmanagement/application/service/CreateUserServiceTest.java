@@ -54,7 +54,6 @@ class CreateUserServiceTest {
               createAccountPort,
               updateUserPort,
               publishDomainEventPort,
-              emailNotificationService,
               validatorFactory.getValidator());
     }
   }
@@ -96,7 +95,6 @@ class CreateUserServiceTest {
     verify(createAccountPort).createFor(savedUser);
     verify(updateUserPort).update(activatedUser);
     verify(publishDomainEventPort).publish(any(UserCreatedDomainEvent.class));
-    verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass1234");
   }
 
   // ── cuentas no disponible
@@ -130,7 +128,6 @@ class CreateUserServiceTest {
     assertEquals(UserStatus.PENDING, result.getStatus(), "sigue PENDING");
     verify(updateUserPort, never()).update(any());
     verify(publishDomainEventPort).publish(any(UserCreatedDomainEvent.class));
-    verify(emailNotificationService).notifyUserCreated(savedUser, "Pass9999");
   }
 
   // ── el evento falla pero el usuario se crea igual
@@ -164,7 +161,6 @@ class CreateUserServiceTest {
 
     // Assert
     assertEquals(UserStatus.ACTIVE, result.getStatus());
-    verify(emailNotificationService).notifyUserCreated(activatedUser, "Pass7777");
   }
 
   // ── email duplicado

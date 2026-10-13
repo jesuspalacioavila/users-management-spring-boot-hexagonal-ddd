@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.jcaa.usersmanagement.application.port.out.PublishDomainEventPort;
+import com.jcaa.usersmanagement.domain.event.UserUpdatedDomainEvent;
 import com.jcaa.usersmanagement.application.port.out.GetUserByEmailPort;
 import com.jcaa.usersmanagement.application.port.out.GetUserByIdPort;
 import com.jcaa.usersmanagement.application.port.out.UpdateUserPort;
@@ -41,7 +43,7 @@ class UpdateUserServiceTest {
   @Mock private UpdateUserPort updateUserPort;
   @Mock private GetUserByIdPort getUserByIdPort;
   @Mock private GetUserByEmailPort getUserByEmailPort;
-  @Mock private EmailNotificationService emailNotificationService;
+  @Mock private PublishDomainEventPort publishDomainEventPort;
 
   private UpdateUserService service;
 
@@ -59,7 +61,7 @@ class UpdateUserServiceTest {
               updateUserPort,
               getUserByIdPort,
               getUserByEmailPort,
-              emailNotificationService,
+              publishDomainEventPort,
               validatorFactory.getValidator());
     }
 
@@ -92,7 +94,7 @@ class UpdateUserServiceTest {
     // Assert
     assertNotNull(result);
     verify(updateUserPort).update(any(UserModel.class));
-    verify(emailNotificationService).notifyUserUpdated(existingUser);
+    verify(publishDomainEventPort).publish(any(UserUpdatedDomainEvent.class));
   }
 
   // ── usuario no encontrado
